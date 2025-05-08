@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wasp Bitcoin Wealth Regen</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    body.light {
+      background: #fff;
+      color: #000;
+    }
+
+    body.dark {
+      background: #000;
+      color: #fff;
+    }
+
+    header {
+      background: #f5a623;
+      padding: 10px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      color: #000;
+    }
+
+    .tabbar {
+      display: flex;
+      justify-content: space-around;
+      background: #1a1a1a;
+      padding: 10px 0;
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+    }
+
+    .tabbar button {
+      flex: 1;
+      background: none;
+      border: none;
+      color: #f5a623;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .container {
+      padding: 20px;
+      display: none;
+    }
+
+    .active {
+      display: block;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      font-size: 14px;
+      border-radius: 5px;
+      border: none;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      font-weight: bold;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      background: #f5a623;
+      color: #000;
+      cursor: pointer;
+    }
+
+    .wallet,
+    .history-entry {
+      background: #222;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+
+<body class="dark">
+
+  <header>Crypto Miner</header>
+
+  <div class="container active" id="authScreen">
+    <h3 class="center">Create Account</h3>
+    <input type="text" id="fullName" placeholder="Full Name">
+    <input type="email" id="email" placeholder="Email ID">
+    <input type="text" id="country" placeholder="Country">
+    <input type="password" id="password" placeholder="Password">
+    <input type="password" id="confirmPassword" placeholder="Confirm Password">
+    <input type="text" id="wallet" placeholder="Wallet Address">
+    <input type="text" id="refCode" value="" readonly>
+    <button onclick="signUp()">Sign Up</button>
+    <hr>
+    <h3 class="center">Sign In</h3>
+    <input type="email" id="loginEmail" placeholder="Email ID">
+    <input type="password" id="loginPassword" placeholder="Password">
+    <button onclick="signIn()">Sign In</button>
+  </div>
+
+  <div class="container" id="homeTab">
+    <h3>Hello, <span id="userName"></span></h3>
+    <div class="wallet">Your Current BTC: <strong id="btcBalance">0.00000000</strong></div>
+    <div class="wallet">BTC Per Second: <strong id="btcRate">+0.00000001</strong></div>
+    <div id="claimStatus" class="wallet">Claim (0/2)</div>
+    <div id="cooldownTimer" class="wallet hidden"></div>
+    <button onclick="claimBTC()">Claim</button>
+    <button onclick="upgrade()">Upgrade (Fake $5)</button>
+  </div>
+
+  <div class="container" id="depositTab">
+    <h3>Deposit</h3>
+    <p>Minimum: 0.00020 BTC</p>
+    <input type="number" id="depositAmount" placeholder="Enter BTC Amount" />
+    <p>Send BTC to this address: <strong>fake_wallet_btc_123</strong></p>
+    <button id="depositBtn" onclick="handleDeposit()">Deposit</button>
+    <div id="depositStatus"></div>
+  </div>
+
+  <div class="container" id="withdrawTab">
+    <h3>Withdraw</h3>
+    <div>Your Current BTC: <strong id="btcBalanceWithdraw">0.00000000</strong></div>
+    <input type="text" id="withdrawWallet" placeholder="Enter Wallet Address">
+    <input type="number" id="withdrawAmount" placeholder="Enter BTC Amount">
+    <button onclick="withdraw()">Withdraw</button>
+  </div>
+
+  <div class="container" id="historyTab">
+    <h3>Transaction History</h3>
+    <div id="historyLog"></div>
+  </div>
+
+  <div class="container" id="settingsTab">
+    <h3>Settings</h3>
+    <p>Email: <span id="settingsEmail"></span></p>
+    <p>Referral Code: <span id="settingsRef"></span></p>
+    <button onclick="toggleTheme()">Toggle Dark/Light Mode</button>
+    <button onclick="logout()">Log Out</button>
+  </div>
+
+  <div class="tabbar hidden" id="tabbar">
+    <button onclick="switchTab('homeTab')">Home</button>
+    <button onclick="switchTab('depositTab')">Deposit</button>
+    <button onclick="switchTab('withdrawTab')">Withdraw</button>
+    <button onclick="switchTab('historyTab')">History</button>
+    <button onclick="switchTab('settingsTab')">Settings</button>
+  </div>
+
+  <script>
+    const refInput = document.getElementById("refCode");
+    refInput.value = Math.floor(10000 + Math.random() * 90000);
+
+    let state = {
+      btc: 0,
+      user: '',
+      email: '',
+      wallet: '',
+      ref: '',
+      history: [],
+      claims: [],
+      theme: 'dark',
+      miningRate: 0.00000001,
+      pendingDeposit: null
+    };
+
+    function saveState() {
+      localStorage.setItem("minerApp", JSON.stringify(state));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem("minerApp");
+      if (saved) {
+        state = JSON.parse(saved);
+        document.body.className = state.theme || 'dark';
+      }
+    }
+
+    function updateUI() {
+      document.getElementById("btcBalance").innerText = state.btc.toFixed(8);
+      document.getElementById("btcBalanceWithdraw").innerText = state.btc.toFixed(8);
+      document.getElementById("btcRate").innerText = `+${state.miningRate.toFixed(9)}`;
+      document.getElementById("userName").innerText = state.user;
+      document.getElementById("settingsEmail").innerText = state.email;
+      document.getElementById("settingsRef").innerText = state.ref;
+
+      const historyBox = document.getElementById("historyLog");
+      historyBox.innerHTML = '';
+      state.history.slice().reverse().forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'history-entry';
+        div.innerText = entry;
+        historyBox.appendChild(div);
+      });
+    }
+
+    function switchTab(id) {
+      document.querySelectorAll(".container").forEach(el => el.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+    }
+
+    function signUp() {
+      const name = document.getElementById("fullName").value;
+      const email = document.getElementById("email").value;
+      const country = document.getElementById("country").value;
+      const pass = document.getElementById("password").value;
+      const confirm = document.getElementById("confirmPassword").value;
+      const wallet = document.getElementById("wallet").value;
+      const ref = document.getElementById("refCode").value;
+
+      if (!name || !email || !pass || pass !== confirm || !wallet) {
+        alert("Please fill all fields correctly.");
+        return;
+      }
+
+      state = {
+        user: name,
+        email,
+        country,
+        btc: 0,
+        wallet,
+        history: [],
+        ref,
+        claims: [],
+        theme: 'dark',
+        miningRate: 0.00000001,
+        pendingDeposit: null
+      };
+      saveState();
+      alert("Account created!");
+      document.getElementById("authScreen").classList.remove("active");
+      document.getElementById("homeTab").classList.add("active");
+      document.getElementById("tabbar").classList.remove("hidden");
+      updateUI();
+    }
+
+    function signIn() {
+      loadState();
+      const email = document.getElementById("loginEmail").value;
+      const pass = document.getElementById("loginPassword").value;
+      if (email === state.email && pass) {
+        alert("Logged in!");
+        document.getElementById("authScreen").classList.remove("active");
+        document.getElementById("homeTab").classList.add("active");
+        document.getElementById("tabbar").classList.remove("hidden");
+        updateUI();
+      } else {
+        alert("Invalid credentials");
+      }
+    }
+
+    function logout() {
+      alert("You have logged out.");
+      document.querySelectorAll(".container").forEach(el => el.classList.remove("active"));
+      document.getElementById("authScreen").classList.add("active");
+      document.getElementById("tabbar").classList.add("hidden");
+    }
+
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      document.body.className = state.theme;
+      saveState();
+    }
+
+    function handleDeposit() {
+      if (state.pendingDeposit) {
+        alert("You already have a pending deposit.");
+        return;
+      }
+
+      const amount = parseFloat(document.getElementById("depositAmount").value);
+      if (isNaN(amount) || amount < 0.00020) {
+        alert("Minimum deposit is 0.00020 BTC");
+        return;
+      }
+
+      state.pendingDeposit = {
+        amount,
+        startTime: Date.now(),
+        endTime: Date.now() + 30 * 60 * 1000
+      };
+
+      state.history.push(`Deposit of ${amount.toFixed(8)} BTC initiated - pending`);
+      saveState();
+      updateDepositUI();
+    }
+
+    function updateDepositUI() {
+      const btn = document.getElementById("depositBtn");
+      const input = document.getElementById("depositAmount");
+      const status = document.getElementById("depositStatus");
+
+      if (state.pendingDeposit) {
+        const now = Date.now();
+        const remaining = state.pendingDeposit.endTime - now;
+
+        if (remaining > 0) {
+          btn.disabled = true;
+          input.disabled = true;
+          status.innerText = "Deposit pending. Time left: " + formatCountdown(remaining);
+        } else {
+          const amt = state.pendingDeposit.amount;
+          state.btc += amt;
+          if (amt >= 0.00020) {
+            state.miningRate = 0.000000009;
+          }
+          state.history.push(`Deposit of ${amt.toFixed(8)} BTC confirmed`);
+          state.pendingDeposit = null;
+          input.value = '';
+          btn.disabled = false;
+          input.disabled = false;
+          status.innerText = "No pending deposit.";
+        }
+        saveState();
+        updateUI();
+      } else {
+        btn.disabled = false;
+        input.disabled = false;
+        status.innerText = "No pending deposit.";
+      }
+    }
+
+    function claimBTC() {
+      const now = Date.now();
+      const claimsToday = state.claims.filter(t => now - t < 86400000);
+      if (claimsToday.length >= 2) {
+        const nextClaimIn = 86400000 - (now - claimsToday[0]);
+        document.getElementById("cooldownTimer").classList.remove("hidden");
+        document.getElementById("cooldownTimer").innerText = "Next claim in: " + formatCountdown(nextClaimIn);
+        return;
+      }
+
+      state.btc += state.miningRate;
+      state.history.push(`Claimed ${state.miningRate.toFixed(8)} BTC`);
+      state.claims.push(now);
+      saveState();
+      updateUI();
+    }
+
+    function updateClaimStatus() {
+      const now = Date.now();
+      state.claims = state.claims.filter(t => now - t < 86400000);
+      const count = state.claims.length;
+      document.getElementById("claimStatus").innerText = `Claim (${count}/2)`;
+
+      if (count >= 2) {
+        const nextClaimIn = 86400000 - (now - state.claims[0]);
+        document.getElementById("cooldownTimer").classList.remove("hidden");
+        document.getElementById("cooldownTimer").innerText = "Next claim in: " + formatCountdown(nextClaimIn);
+      } else {
+        document.getElementById("cooldownTimer").classList.add("hidden");
+      }
+    }
+
+    function formatCountdown(ms) {
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      return `${h}h ${m}m ${s}s`;
+    }
+
+    function upgrade() {
+      if (state.btc < 0.0001) {
+        alert("Need at least 0.0001 BTC");
+        return;
+      }
+      state.btc -= 0.0001;
+      state.history.push("Upgraded mining speed (fake)");
+      saveState();
+      updateUI();
+    }
+
+    function withdraw() {
+      const amount = parseFloat(document.getElementById("withdrawAmount").value);
+      const wallet = document.getElementById("withdrawWallet").value;
+      if (!wallet || isNaN(amount) || amount <= 0 || amount > state.btc) {
+        alert("Invalid withdraw info.");
+        return;
+      }
+      state.btc -= amount;
+      state.history.push(`Withdrew ${amount.toFixed(8)} BTC to ${wallet}`);
+      saveState();
+      updateUI();
+      alert("Withdrawal processed (fake)");
+    }
+
+    setInterval(() => {
+      updateClaimStatus();
+      updateDepositUI();
+    }, 1000);
+
+    loadState();
+  </script>
+
+</body>
+
+</html>
